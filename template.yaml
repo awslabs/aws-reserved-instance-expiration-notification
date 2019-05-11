@@ -1,0 +1,81 @@
+# Copyright <2019> Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Serverless Specification template describing your function.
+Resources:
+  RIExpNotificationLambdaFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: ri_expiration.lambda_handler
+      Runtime: python3.6
+      CodeUri: ./src/
+      Description: ''
+      MemorySize: 512
+      Timeout: 120
+      Role: !GetAtt LambdaReadOnlyExecutionRole.Arn
+      Events:
+        Schedule1:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 8 1 * ? *)
+
+  DynamoDBTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: 'email'
+          AttributeType: 'S'
+      KeySchema:
+        -
+          AttributeName: "email"
+          KeyType: "HASH"
+      TableName: "ri_exp_mailing"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+
+  LambdaReadOnlyExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonRedshiftReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonElastiCacheReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+        - "arn:aws:iam::aws:policy/AmazonRDSReadOnlyAccess"
+      Policies:
+        -
+          PolicyName: "ElasticsearchReadOnlyAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -  #Policy to allow Organizations account description
+                Effect: "Allow"
+                Action:
+                  - "es:DescribeReservedElasticsearchInstances"
+                  - "es:ESHttpHead"
+                  - "es:DescribeElaticsearchDomain"
+                  - "es:ESHttpGet"
+                  - "es:ListTags"
+                  - "es:GetUpgradeStatus"
+                  - "es:DescribeElasticsearchDomainConfig"
+                  - "es:GetUpgradeHistory"
+                Resource: "*"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: "AllowLambdaServiceToAssumeRole"
+            Effect: "Allow"
+            Action:
+              - "sts:AssumeRole"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
