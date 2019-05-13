@@ -1,6 +1,6 @@
 # aws-reserved-instance-expiration-notification
 
- Python SAM Lambda module for sending email about AWS Reserved Instance whose contract is expiring in 30 days.
+ Python SAM Lambda module for sending email about AWS Reserved Instance whose contract is expiring in 30 days. (number of days can be configured)
 
  This is a sample template for aws-reserved-instance-expiration-notification. Below is a brief explanation of what we have generated for you:
 
