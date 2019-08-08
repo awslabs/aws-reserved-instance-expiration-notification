@@ -9,55 +9,47 @@ from dateutil import relativedelta
 from datetime import date, datetime, timedelta
 import numpy as np
 import pandas as pd
+import os
+
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 
 TARGET_REGION = 'ap-northeast-2'
 SES_REGION = 'us-east-1'
-SENDER = "blah <example@example.com>"
+SENDER = "blah <your_email@example.com>"
 
-# https://docs.aws.amazon.com/ko_kr/ses/latest/DeveloperGuide/send-using-sdk-python.html
 def send_email(info):
     RECIPIENT = info['email']
-    # CONFIGURATION_SET = "ConfigSet"
-    SUBJECT = "Amazon RI Expiration Notification"
-    BODY_TEXT = ("Amazon RI Expiration Notification\r\n"
-                 "This email was sent with Amazon SES using the "
-                 "AWS SDK for Python (Boto)."
-                 )
+    attachments = info['attach']
     BODY_HTML = info['msg']
 
-    CHARSET = "UTF-8"
+    message = MIMEMultipart()
+    message['Subject'] = 'Amazon RI Expiration Notification'
+    message['From'] = SENDER
+    message['To'] = RECIPIENT
+    destinations = []
+    destinations.append(RECIPIENT)
+
+    # message body
+    part = MIMEText(BODY_HTML, 'html')
+    message.attach(part)
+
+    # attachment
+    for attachment in attachments:
+        with open(attachment, 'rb') as f:
+            part = MIMEApplication(f.read())
+            part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment))
+            message.attach(part)
+
     client = boto3.client('ses', region_name=SES_REGION)
-    try:
-        response = client.send_email(
-            Destination={
-                'ToAddresses': [
-                    RECIPIENT,
-                ],
-            },
-            Message={
-                'Body': {
-                    'Html': {
-                        'Charset': CHARSET,
-                        'Data': BODY_HTML,
-                    },
-                    'Text': {
-                        'Charset': CHARSET,
-                        'Data': BODY_TEXT,
-                    },
-                },
-                'Subject': {
-                    'Charset': CHARSET,
-                    'Data': SUBJECT,
-                },
-            },
-            Source=SENDER,
-            # ConfigurationSetName=CONFIGURATION_SET,
-        )
-    except ClientError as e:
-        print(e.response['Error']['Message'])
-    else:
-        print("Email sent! Message ID:"),
-        print(response['MessageId'])
+    response = client.send_raw_email(
+        Source=message['From'],
+        Destinations=destinations,
+        RawMessage={
+            'Data': message.as_string()
+        }
+    )
 
 
 def getExpRIList(response: boto3.resources.response, response_name, filter_name, filter_value, select_column=[]):
@@ -71,9 +63,16 @@ def getExpRIList(response: boto3.resources.response, response_name, filter_name,
     df['StartTime'] = pd.to_datetime(df['StartTime']).dt.tz_convert(None)
     df['End'] = df['StartTime'] + pd.to_timedelta(df['Duration'], 's')
     will_expire = df[df['End'] <= next_month]
-    # will_expire = df[df['End'] >= next_month]
     filtered_list = will_expire[select_column].values.tolist()
-    return filtered_list, will_expire[select_column].columns.to_list()
+    return filtered_list, will_expire[select_column].columns.to_list(), df
+
+
+def to_excel(df, filename, condition):
+    writer = pd.ExcelWriter(filename)
+    row_style = lambda row: pd.Series('background-color: {}'.format('yellow' if condition(row) else 'green'), row.index)
+    df.style.apply(row_style, axis=1).to_excel(writer, )
+    writer.save()
+    writer.close()
 
 
 def makeMessage():
@@ -89,16 +88,16 @@ def makeMessage():
     ec2_ri_list = list(map(lambda a: a.values(), ec2_response['ReservedInstances']))
     ec2_head = ec2_response['ReservedInstances'][0].keys()
     ec2_df = pd.DataFrame(ec2_ri_list, columns=ec2_head)
+    ec2_df['Start'] = pd.to_datetime(ec2_df['Start']).dt.tz_convert(None)
     ec2_df['End'] = pd.to_datetime(ec2_df['End']).dt.tz_convert(None)
     ec2_will_expire = ec2_df[ec2_df['End'] <= next_month]
-    # ec2_will_expire = ec2_df[ec2_df['End'] >= next_month]
     select_column = ['ReservedInstancesId', 'Start', 'State', 'End', 'InstanceType', 'InstanceCount']
     ec2_head2 = ec2_will_expire[select_column].columns.to_list()
     ec2_filtered_list = ec2_will_expire[select_column].values.tolist()
 
     # rds
     rds_client = boto3.client('rds', region_name=TARGET_REGION)
-    rds_filtered_list, rds_head = getExpRIList(rds_client.describe_reserved_db_instances(),
+    rds_filtered_list, rds_head, rds_df = getExpRIList(rds_client.describe_reserved_db_instances(),
                                                'ReservedDBInstances',
                                                'State',
                                                'active',
@@ -107,7 +106,7 @@ def makeMessage():
 
     # redshift
     red_client = boto3.client('redshift', region_name=TARGET_REGION)
-    red_filtered_list, red_head = getExpRIList(red_client.describe_reserved_nodes(),
+    red_filtered_list, red_head, red_df = getExpRIList(red_client.describe_reserved_nodes(),
                                                'ReservedNodes',
                                                'State',
                                                'active',
@@ -115,7 +114,7 @@ def makeMessage():
 
     # elasticache
     ec_client = boto3.client('elasticache', region_name=TARGET_REGION)
-    ec_filtered_list, ec_head = getExpRIList(ec_client.describe_reserved_cache_nodes(),
+    ec_filtered_list, ec_head, ec_df = getExpRIList(ec_client.describe_reserved_cache_nodes(),
                                              'ReservedCacheNodes',
                                              'State',
                                              'active',
@@ -124,13 +123,19 @@ def makeMessage():
 
     # elasticsearch
     es_client = boto3.client('es', region_name=TARGET_REGION)
-    es_filtered_list, es_head = getExpRIList(es_client.describe_reserved_elasticsearch_instances(),
+    es_filtered_list, es_head, es_df = getExpRIList(es_client.describe_reserved_elasticsearch_instances(),
                                              'ReservedElasticsearchInstances',
                                              'State',
                                              'active',
                                              ['ReservationName', 'ReservedElasticsearchInstanceId', 'StartTime',
                                               'State', 'End', 'ElasticsearchInstanceType',
                                               'ElasticsearchInstanceCount'])
+
+    to_excel(ec2_df, '/tmp/ec2_df.xlsx', lambda df: df['End'] <= next_month)
+    to_excel(rds_df, '/tmp/rds_df.xlsx', lambda df: df['End'] <= next_month)
+    to_excel(red_df, '/tmp/red_df.xlsx', lambda df: df['End'] <= next_month)
+    to_excel(ec_df, '/tmp/ec_df.xlsx', lambda df: df['End'] <= next_month)
+    to_excel(es_df, '/tmp/es_df.xlsx', lambda df: df['End'] <= next_month)
 
     html = "<!DOCTYPE html>\
           <html lang='en'>\
@@ -211,7 +216,8 @@ def lambda_handler(event, context):
 
     msg = makeMessage()
     save_msg_to_s3(msg, "ri-exp-contents", datetime.today().strftime("%Y/%m/"))
-    infos = list(map(lambda a: {'email': a, 'msg': msg}, email_list))
+    attach = ['/tmp/ec2_df.xlsx', '/tmp/rds_df.xlsx', '/tmp/red_df.xlsx', '/tmp/ec_df.xlsx', '/tmp/es_df.xlsx']
+    infos = list(map(lambda a: {'email': a, 'msg': msg, 'attach': attach}, email_list))
 
     procs = []
     for info in infos:

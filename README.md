@@ -1,6 +1,6 @@
 # aws-reserved-instance-expiration-notification
 
- Python SAM Lambda module for sending email about AWS Reserved Instance whose contract is expiring in 30 days. (number of days can be configured)
+ Python SAM Lambda module for sending email about AWS Reserved Instance whose contract is expiring in 30 days.
 
  This is a sample template for aws-reserved-instance-expiration-notification. Below is a brief explanation of what we have generated for you:
 
@@ -24,7 +24,7 @@
 * [AWS Serverless Application Model installed](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
 * [Docker installed](https://www.docker.com/community-edition)
 * [Python 3 installed](https://www.python.org/downloads/)
-
+* [Pandas](https://pandas.pydata.org/)
 
 ## How to build
 
@@ -46,7 +46,7 @@ In this instruction, we are going to build reserved instance notification system
 aws configure set default.region ap-northeast-2
 ``` 
 
-Replace the sender's email address in src/ri_expiration.py. You will need to verify this email address via SES later. 
+Replace the sender's email address. You will need to verify this email address via SES later. 
 
 ```python
 SENDER = "USER_NAME <user@example.com>"
@@ -72,12 +72,6 @@ sam package \
     --template-file .aws-sam/build/template.yaml \
     --output-template-file packaged.yaml \
     --s3-bucket aws-reserved-instance-expiration-notification-$Date
-```
-
-Then you can do local test.
-
-```bash
-sam local invoke --no-event
 ```
 
 In the AWS SAM CLI, use the deploy command to deploy all of the resources that you defined in the template.
