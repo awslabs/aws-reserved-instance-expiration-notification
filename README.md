@@ -46,7 +46,7 @@ In this instruction, we are going to build reserved instance notification system
 aws configure set default.region ap-northeast-2
 ``` 
 
-Replace the sender's email address. You will need to verify this email address via SES later. 
+Replace the sender's email address in src/ri_expiration.py. You will need to verify this email address via SES later. 
 
 ```python
 SENDER = "USER_NAME <user@example.com>"
@@ -72,6 +72,12 @@ sam package \
     --template-file .aws-sam/build/template.yaml \
     --output-template-file packaged.yaml \
     --s3-bucket aws-reserved-instance-expiration-notification-$Date
+```
+
+Then you can do local test.
+
+```bash
+sam local invoke --no-event
 ```
 
 In the AWS SAM CLI, use the deploy command to deploy all of the resources that you defined in the template.
